@@ -3,11 +3,16 @@
 int amountServos = 6;
 Servo servos[6]; // six servos in array
 int curPos[6] = {90, 90, 90}; // stores servo positions
+int counter = 0; 
+bool endSwitch = false; 
+bool startSwitch = false; 
+int startSwitchPin =29;
+int endSwitchPin =14;
 
-int geneLength = 10; // needs to be an even number
-int gene[10];
+int geneLength = 3; // needs to be an even number
+int gene[3];
 int servoCenter = 90;
-int maxServoRange = 30; // only move maxServoRange from center
+int maxServoRange = 40; // only move maxServoRange from center
 int stepSize = 10;
 
 #define PI2 6.283185 // 2*PI saves calculation later
@@ -31,6 +36,8 @@ void setup() {
   }
   setServosToPosition(servoCenter);
   delay(100);
+  pinMode(startSwitchPin, INPUT_PULLUP);
+  pinMode(endSwitchPin, INPUT_PULLUP);
 }
 
 void loop() {
@@ -49,8 +56,13 @@ void loop() {
     }
     n++;
   }
+  eval = true;
   if (eval == true) {
     delay(100);
+    moveToStart();
+    gene[0] = 255;
+    gene[1] = 40;
+    gene[2] = 80;
     float fitness = evaluateIndividual(gene);
     Serial.println(fitness);
     delay(100);
@@ -58,6 +70,43 @@ void loop() {
     delay(100);
     eval = false; 
   }
+}
+
+void moveToStart(){
+  float AMP = 40.0;
+  float PHASE = 1;//gene[n + 1];
+  float FREQ = 1.0;//gene[n + 2];
+  Serial.print("STARTING");
+  float timeCount = 0.0; 
+  while(startSwitch == false){
+    timeCount+=FREQ;
+    Serial.print(digitalRead(startSwitchPin));
+    if (digitalRead(startSwitchPin) == LOW) {
+      startSwitch = true;
+    }
+    for (int n = 0; n < amountServos; n++) {
+      int servoPos = 90 + (int)(AMP * sin(timeCount + (n * 1.0)));
+      //Serial.print("tc = "); 
+      //Serial.print(timeCount);
+      //Serial.print(servoPos);
+      //Serial.print(",");
+      if (servoPos < servoCenter - maxServoRange) {
+        servoPos = servoCenter - maxServoRange;
+        Serial.print("--");
+      }
+      else if (servoPos > servoCenter + maxServoRange) {
+        servoPos = servoCenter + maxServoRange;
+      }
+      servos[n].write(servoPos); // Move servos to the right position for the current time
+      curPos[n] = servoPos;
+      sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
+      // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
+      sensorSum = sensorSum + sensorValue; //Add sensor reading to the sum (summed here because saving it clogged up memory)
+      delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
+    }
+  }
+  Serial.print("DONE");  
+  startSwitch = false;
 }
 
 void setServosToPosition(int pos) {
@@ -84,7 +133,7 @@ float evaluateIndividual(int gene[]) {
   for (int j = 0; j < amountServos; j++) {
     for (int i = 0; i < LENGTH; i++) { // Step across wave table
       float sum = 0; //Temporary storage for calculating sum of function values
-      for (int n = 0; n < geneLength; n += 2) {
+      for (int n = 0; n < geneLength; n += 3) {
         //Standard form of the Fourier series is: sN(x)= A0/2 +Sum(n=1toN)( An*sin(2*pi*n*x/P+phi[n]) );
         //   [N is fixed to 10]
         //   [phi(n) is confined to - [0;2*pi]]
@@ -92,11 +141,11 @@ float evaluateIndividual(int gene[]) {
         //   [A0 is set to 90. (Should it be able to vary? Now the fin movements always oscillate around 90 degrees)]
         //   [An is set to vary in the interval between 0 and maxAngleChange]
         // f = gene[n] * sin(((PI2 * (n + 1) * (i + 1)) / P) + gene[n + 1]); //+1 added to n and i to avoid zero for first value
-        float AMP = ((float)gene[n] / 256.0) * 30.0;
-        float PHASE = 1;//gene[n + 1];
-        float FREQ = 1.0/(float)gene[n+1];//gene[n + 2];
+        float AMP = ((float)gene[n] / 255.0) * maxServoRange;
+        float PHASE = gene[n + 1]/ 255.0 * 4;
+        float FREQ = (float)gene[n+2]/255;//gene[n + 2];
         //if (j >=3) {
-        f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)) + PHASE + j); //+1 added to n and i to avoid zero for first value
+        f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)) + (PHASE * j)); //+1 added to n and i to avoid zero for first value
         //}
         //else {
         //  f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)));// + PHASE -j); //+1 added to n and i to avoid zero for first value          
@@ -108,7 +157,7 @@ float evaluateIndividual(int gene[]) {
         //Serial.print(",FREQ:");
         //Serial.print(FREQ);
         //Serial.print(",f:");
-        //Serial.print(f);
+        //Serial.println(f);
         sum = sum + f;
       }
       sum = 90.0 + (sum / (geneLength / 2.0)) + 0.5; //0.5 added to round off correctly when converting to byte below
@@ -121,16 +170,25 @@ float evaluateIndividual(int gene[]) {
   }
 
   //*3* Play back movement on robot from wavetable and sum up the sensor readings
+  int lCount;
+  Serial.print("STARTING EVALUATION");  
   for (int i = 0; i < LENGTH; i++) { // Step across wave table
+    Serial.print(digitalRead(endSwitchPin));
+    if (digitalRead(endSwitchPin) == LOW) {
+      break;
+    }
+    else {
+      lCount++;
+    }
     for (int n = 0; n < amountServos; n++) {
       int servoPos = wave[n][i];
-      Serial.print(servoPos);
-      Serial.print(",");
+      Serial.println(servoPos);
+//      Serial.print(",");
       if (servoPos < servoCenter - maxServoRange) {
         servoPos = servoCenter - maxServoRange;
       }
-      else if (servoPos < servoCenter - maxServoRange) {
-        servoPos = servoCenter - maxServoRange;
+      else if (servoPos > servoCenter + maxServoRange) {
+        servoPos = servoCenter + maxServoRange;
       }
       servos[n].write(servoPos); // Move servos to the right position for the current time
       curPos[n] = servoPos;
@@ -140,7 +198,7 @@ float evaluateIndividual(int gene[]) {
       delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
     }
   }
-
+  return lCount; 
   //*4* Send the summation of sensor readings to NN (this value is used to calculate the fitness of the individual (the phenotype))
   // [copy code from Franks program]
   return sensorSum = 0;
