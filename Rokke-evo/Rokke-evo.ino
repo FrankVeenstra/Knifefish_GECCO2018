@@ -3,17 +3,21 @@
 int amountServos = 6;
 Servo servos[6]; // six servos in array
 int curPos[6] = {90, 90, 90}; // stores servo positions
-int counter = 0; 
-bool endSwitch = false; 
-bool startSwitch = false; 
-int startSwitchPin =29;
-int endSwitchPin =14;
+int counter = 0;
+bool endSwitch = false;
+bool startSwitch = false;
+int startSwitchPin = 16;
+int endSwitchPin = 14;
+#define IRsensor A0
+
+int offset[6] = {10,0,-1,3,0,0};
 
 int geneLength = 3; // needs to be an even number
 int gene[3];
 int servoCenter = 90;
 int maxServoRange = 40; // only move maxServoRange from center
 int stepSize = 10;
+int maxIRValue = 245;
 
 #define PI2 6.283185 // 2*PI saves calculation later
 
@@ -38,66 +42,78 @@ void setup() {
   delay(100);
   pinMode(startSwitchPin, INPUT_PULLUP);
   pinMode(endSwitchPin, INPUT_PULLUP);
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  //establishContact();
+}
+
+void establishContact() {
+  while (Serial.available() <= 0) {
+    Serial.println("0,0,0");   // send an initial string
+    delay(300);
+  }
 }
 
 void loop() {
   int n = 0;
-  bool eval = false; 
-  while (Serial.available() > 0) {
-    delay(20); // ensure entire serial signal is received, not half a signal
-    if (n < geneLength) {
-      gene[n] = Serial.read();
-      Serial.print(gene[n]);
-      Serial.print(",");
-      eval = true; 
+  bool eval = false;
+  //Serial.println(analogRead(IRsensor));  // value from sensor * (5/1024)
+  //delay(500);
+  
+  while (Serial.available()) {
+      delay(200); // ensure entire serial signal is received, not half a signal
+      if (n < geneLength) {
+        gene[n] = Serial.read();
+        // Serial.print(gene[n]);
+        // Serial.println(",");
+        eval = true;
+      }
+      else {
+        Serial.read();
+      }
+      n++;
     }
-    else {
-      Serial.read();
+    if (eval == true) {
+      delay(100);
+      moveToStart();
+      delay(500);
+      float fitness = evaluateIndividual(gene);
+      Serial.println(fitness);
+      delay(100);
+      setServosToPosition(servoCenter);
+      delay(100);
+      eval = false;
     }
-    n++;
-  }
-  eval = true;
-  if (eval == true) {
-    delay(100);
-    moveToStart();
-    gene[0] = 255;
-    gene[1] = 40;
-    gene[2] = 80;
-    float fitness = evaluateIndividual(gene);
-    Serial.println(fitness);
-    delay(100);
-    setServosToPosition(servoCenter);
-    delay(100);
-    eval = false; 
-  }
+//  
 }
 
-void moveToStart(){
+void moveToStart() {
   float AMP = 40.0;
   float PHASE = 1;//gene[n + 1];
   float FREQ = 1.0;//gene[n + 2];
-  Serial.print("STARTING");
-  float timeCount = 0.0; 
-  while(startSwitch == false){
-    timeCount+=FREQ;
-    Serial.print(digitalRead(startSwitchPin));
+  //  Serial.print("STARTING");
+  float timeCount = 0.0;
+  while (startSwitch == false) {
+    timeCount += FREQ;
+    //    Serial.print(digitalRead(startSwitchPin));
     if (digitalRead(startSwitchPin) == LOW) {
       startSwitch = true;
     }
     for (int n = 0; n < amountServos; n++) {
       int servoPos = 90 + (int)(AMP * sin(timeCount + (n * 1.0)));
-      //Serial.print("tc = "); 
+      //Serial.print("tc = ");
       //Serial.print(timeCount);
       //Serial.print(servoPos);
       //Serial.print(",");
       if (servoPos < servoCenter - maxServoRange) {
         servoPos = servoCenter - maxServoRange;
-        Serial.print("--");
+        //        Serial.print("--");
       }
       else if (servoPos > servoCenter + maxServoRange) {
         servoPos = servoCenter + maxServoRange;
       }
-      servos[n].write(servoPos); // Move servos to the right position for the current time
+        servos[n].write(servoPos + offset[n]); // Move servos to the right position for the current time
       curPos[n] = servoPos;
       sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
       // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
@@ -105,7 +121,7 @@ void moveToStart(){
       delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
     }
   }
-  Serial.print("DONE");  
+  //  Serial.print("DONE");
   startSwitch = false;
 }
 
@@ -115,7 +131,7 @@ void setServosToPosition(int pos) {
     for (int i = 0; i < amountServos; i++) {
       int dpos = pos - curPos[i];
       int tpos =  pos - ((9 - n) * dpos * 0.11);
-      servos[i].write(tpos);
+      servos[i].write(tpos + offset[i]);
       if (n == 9) {
         curPos[i] = tpos;
       }
@@ -142,13 +158,13 @@ float evaluateIndividual(int gene[]) {
         //   [An is set to vary in the interval between 0 and maxAngleChange]
         // f = gene[n] * sin(((PI2 * (n + 1) * (i + 1)) / P) + gene[n + 1]); //+1 added to n and i to avoid zero for first value
         float AMP = ((float)gene[n] / 255.0) * maxServoRange;
-        float PHASE = gene[n + 1]/ 255.0 * 4;
-        float FREQ = (float)gene[n+2]/255;//gene[n + 2];
+        float PHASE = gene[n + 1] / 255.0 * 4;
+        float FREQ = (float)gene[n + 2] / 255; //gene[n + 2];
         //if (j >=3) {
         f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)) + (PHASE * j)); //+1 added to n and i to avoid zero for first value
         //}
         //else {
-        //  f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)));// + PHASE -j); //+1 added to n and i to avoid zero for first value          
+        //  f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)));// + PHASE -j); //+1 added to n and i to avoid zero for first value
         //}
         //Serial.print("AMP:");
         //Serial.print(AMP);
@@ -171,26 +187,29 @@ float evaluateIndividual(int gene[]) {
 
   //*3* Play back movement on robot from wavetable and sum up the sensor readings
   int lCount;
-  Serial.print("STARTING EVALUATION");  
+  double fitValue = 0;
+  //Serial.print("STARTING EVALUATION");
   for (int i = 0; i < LENGTH; i++) { // Step across wave table
-    Serial.print(digitalRead(endSwitchPin));
+    //Serial.print(digitalRead(endSwitchPin));
     if (digitalRead(endSwitchPin) == LOW) {
+      return ((double)(LENGTH-i) * (double) maxIRValue) + fitValue;
       break;
     }
     else {
       lCount++;
+      fitValue += analogRead(IRsensor);   // print the distance
     }
     for (int n = 0; n < amountServos; n++) {
       int servoPos = wave[n][i];
-      Serial.println(servoPos);
-//      Serial.print(",");
+      //      Serial.println(servoPos);
+      //      Serial.print(",");
       if (servoPos < servoCenter - maxServoRange) {
         servoPos = servoCenter - maxServoRange;
       }
       else if (servoPos > servoCenter + maxServoRange) {
         servoPos = servoCenter + maxServoRange;
       }
-      servos[n].write(servoPos); // Move servos to the right position for the current time
+      servos[n].write(servoPos  + offset[n]); // Move servos to the right position for the current time
       curPos[n] = servoPos;
       sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
       // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
@@ -198,7 +217,8 @@ float evaluateIndividual(int gene[]) {
       delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
     }
   }
-  return lCount; 
+  return fitValue; 
+  return 0.0;
   //*4* Send the summation of sensor readings to NN (this value is used to calculate the fitness of the individual (the phenotype))
   // [copy code from Franks program]
   return sensorSum = 0;

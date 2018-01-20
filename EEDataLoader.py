@@ -20,13 +20,13 @@ import serial # this is pyserial not serial
 import struct 
 
 # Settings or global variables
-populationSize = 20
+populationSize = 10
 genomeLength = 3
 amountTrials = 1
 name = 'test'
 genome = [] # template
-mutationRate = 0.04
-sigma = 20
+mutationRate = 0.2
+sigma = 100
 useSigma = True
 amountGen = 100
 # not implemented yet
@@ -52,10 +52,6 @@ def initializePopulation(populationSize):
 def selectPop(pop):
     return pop
 
-def printPop(pop):
-	for i in range(len(pop)):
-		print str(i) + ' has fitness ' + str(pop[i].fitness) + ' and genome ' + str(pop[i].genome) 
-
 def selRandom(individuals, k):
     return [random.choice(individuals) for i in xrange(k)]
 
@@ -76,14 +72,14 @@ def selectTournament(pop, tournsize):
 def mutatePop(pop, mr):
     for i in range(len(pop)): 
         for j in range(len(pop[i].genome)):
-            if (random.uniform(0.0,1.0) < mr):
+            if (random.uniform(0,1) < mr):
                 pop[i].genome[j] = random.randint(0,255)
     return pop
 
 def mutatePopS(pop,mr,sigma):
     for i in range(len(pop)): 
         for j in range(len(pop[i].genome)):
-            if (random.uniform(0.0,1.0) < mr):
+            if (random.uniform(0,1) < mr):
                 pop[i].genome[j] += random.randint(-sigma, +sigma)
                 if (pop[i].genome[j] > 255):
                     pop[i].genome[j] = 255
@@ -195,7 +191,7 @@ def initialPopulationEvaluation(pop, ser, data, hof):
     data.setValues(fitnessAr)
     hof.individuals.append(pop[bestInd])
     hof.maxFit.append(bestFit)
-    printPop(pop)
+    print(pop)
 
 def initialPopulationEvaluationTest(pop, data, hof):
     for i in range(populationSize):
@@ -217,7 +213,7 @@ def initialPopulationEvaluationTest(pop, data, hof):
 def continueEvolution(pop, hof, ax, data, ser):
     ser.flush()
     time.sleep(0.5)
-    pop = selectTournament(pop, 4)
+    pop = selectTournament(pop, 3)
     if (useSigma == False):
         pop = mutatePop(pop,mutationRate) # random value
     else:
@@ -252,7 +248,7 @@ def continueEvolution(pop, hof, ax, data, ser):
 #    ax.plot(hof.maxFit)
     data.plotGraph(ax)
     sum = 0
-    printPop(pop)
+    print(pop)
     plt.pause(0.05)
 
 
@@ -338,7 +334,7 @@ def run(hof, data, ax, name):
 
 def main():
 	
-    amountRuns = 4
+    amountRuns = 1
     hofs = []
     datas = []
     plt.ion()
@@ -392,8 +388,8 @@ def plotDatas(datas):
     ax.plot(max50, color = 'white') 
     ax.fill_between(x,max25,max75, color = 'grey')
 
-def loadBestIndividual():
-    filename = 'test0_0'
+def loadBestIndividual(fname):
+    filename = fname
     hof=Hof()
     hof.load(filename)
     bestIndividual = []
@@ -418,5 +414,17 @@ def loadBestIndividual():
     fit = float(ser.readline()) # waits for incoming line (fitness value)  
     print 'received robot fitness: ' , fit
 
-main()
-#loadBestIndividual()
+def loadAll(fname):
+    fig = plt.figure()
+    ax = fig.add_subplot(1,1, 1)    
+    hof=Hof()
+    data = Data()
+    hof.load(fname)
+    data.load(fname)
+    data.plotGraph(ax) 
+
+fname = 'ExpZero6_0' 
+loadAll(fname)
+#main()
+loadBestIndividual(fname)
+plt.show()
