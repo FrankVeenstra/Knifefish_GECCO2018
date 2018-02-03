@@ -20,17 +20,17 @@ import serial # this is pyserial not serial
 import struct 
 
 # Settings or global variables
-populationSize = 20
-genomeLength = 3
+populationSize = 10
+genomeLength = 15
 amountTrials = 1
 name = 'test'
 genome = [] # template
-mutationRate = 0.04
-sigma = 20
+mutationRate = 0.1
+sigma = 50
 useSigma = True
 amountGen = 100
 # not implemented yet
-elitism = 0.1
+elitismFactor = 0.11
 replaceWorst = 0.1
 
 class Individual:
@@ -73,6 +73,53 @@ def selectTournament(pop, tournsize):
         chosen.append(copy.deepcopy(aspirants[bestAspirant]))
     return chosen
 
+def selectTournamentElitism(pop, tournsize, elitismFactor, eliteMut):
+    amountElites = int(len(pop) * elitismFactor)
+    elitePop = []
+    eliteFitnesses = []
+    eliteInds = []
+    for i in range(amountElites):
+        newElite = -1
+        eliteFitnesses.append(0.0)
+        eliteInds.append(-1)
+        for j in range(len(pop)): 
+            sameElite = False
+            for k in range(len(eliteInds)):
+                if (j == eliteInds[k]):
+                    sameElite = True
+            if (sameElite == False and pop[j].fitness >= eliteFitnesses[i]):
+                eliteFitnesses[i] = pop[j].fitness
+                eliteInds[i] = j
+                newElite = j
+        elitePop.append(copy.deepcopy(pop[newElite]))
+    remainingPopLen = len(pop) - amountElites
+    k = remainingPopLen
+    chosen = []
+    for i in xrange(k):
+        aspirants = selRandom(pop, tournsize)
+        bestAspirant = 0
+        bestAspirantFit = 0
+        for j in range(len(aspirants)):
+            if (aspirants[j].fitness > bestAspirantFit):
+                bestAspirant = j
+                bestAspirantFit = aspirants[j].fitness
+        chosen.append(copy.deepcopy(aspirants[bestAspirant]))
+    if (eliteMut == False):
+        if (useSigma == False):
+            chosen = mutatePop(chosen,mutationRate) # random value
+        else:
+            chosen = mutatePopS(chosen,mutationRate,sigma) # with sigma distance
+    elif (eliteMut == True):
+        if (useSigma == False):
+            chosen = mutatePop(chosen,mutationRate) # random value
+            elitePop = mutatePop(elitePop,mutationRate) # random value
+        else:
+            chosen = mutatePopS(chosen,mutationRate,sigma) # with sigma distance
+            elitePop = mutatePopS(elitePop,mutationRate,sigma) # with sigma distance
+    chosenPop = elitePop + chosen
+    return chosenPop
+
+
 def mutatePop(pop, mr):
     for i in range(len(pop)): 
         for j in range(len(pop[i].genome)):
@@ -84,12 +131,25 @@ def mutatePopS(pop,mr,sigma):
     for i in range(len(pop)): 
         for j in range(len(pop[i].genome)):
             if (random.uniform(0.0,1.0) < mr):
+                pop[i].genome[j] += int(random.gauss(0, sigma))
+                # random.randint(-sigma, +sigma)
+                if (pop[i].genome[j] > 255):
+                    pop[i].genome[j] = 255
+                elif (pop[i].genome[j] < 0):
+                    pop[i].genome[j] = 0
+    return pop
+
+def mutatePopS_B(pop,mr,sigma):
+    for i in range(len(pop)): 
+        for j in range(len(pop[i].genome)):
+            if (random.uniform(0.0,1.0) < mr):
                 pop[i].genome[j] += random.randint(-sigma, +sigma)
                 if (pop[i].genome[j] > 255):
                     pop[i].genome[j] = 255
                 elif (pop[i].genome[j] < 0):
                     pop[i].genome[j] = 0
     return pop
+
 
 class Hof:
     def __init__(self):
@@ -217,11 +277,8 @@ def initialPopulationEvaluationTest(pop, data, hof):
 def continueEvolution(pop, hof, ax, data, ser):
     ser.flush()
     time.sleep(0.5)
-    pop = selectTournament(pop, 4)
-    if (useSigma == False):
-        pop = mutatePop(pop,mutationRate) # random value
-    else:
-        pop = mutatePopS(pop,mutationRate,sigma) # with sigma distance
+	# elitism tournament includes mutation
+    pop = selectTournamentElitism(pop,3, elitismFactor, False)
     for i in range(populationSize):
         fits_t = [] # stores fitness values of all individuals
         for t in range(amountTrials):
@@ -233,7 +290,10 @@ def continueEvolution(pop, hof, ax, data, ser):
             print 'received robot fitness: ', fit
             fits_t.append(fit)
             ser.flush()
-        pop[i].fitness = min(fits_t) # lowest value will be fitness 
+        listSum = sum(fits_t)
+        listLength = len(fits_t)
+        listAverage = listSum / listLength
+        pop[i].fitness = listAverage # lowest value will be fitness 
         print "pop fitness of ind "+ str(i) + " = " + str(pop[i].fitness)    
     bestInd = 0
     bestFit = 0
@@ -251,18 +311,16 @@ def continueEvolution(pop, hof, ax, data, ser):
 #    ax.clear()
 #    ax.plot(hof.maxFit)
     data.plotGraph(ax)
-    sum = 0
     printPop(pop)
     plt.pause(0.05)
+    return pop
 
 
 def continueEvolutionTest(pop, hof, ax, data):
     time.sleep(0.001)
-    pop = selectTournament(pop, 3)
-    if (useSigma == False):
-        pop = mutatePop(pop,mutationRate) # random value
-    else:
-        pop = mutatePopS(pop,mutationRate,sigma) # with sigma distance
+#    pop = selectTournament(pop, 3)
+	# elitism tournament includes mutation
+    pop = selectTournamentElitism(pop,3, elitismFactor, False)
     for i in range(populationSize):
         fits_t = [] # stores fitness values of all individuals
         for t in range(amountTrials):
@@ -289,7 +347,6 @@ def continueEvolutionTest(pop, hof, ax, data):
 #    ax.clear()
     data.plotGraph(ax)
 #    ax.plot(hof.maxFit, color = 'black')
-    sum = 0
     plt.pause(0.001)
     return pop
 
@@ -312,19 +369,18 @@ def run(hof, data, ax, name):
     # plt.pause(0.05)
 
     # evaluate initial population
-    print "evaluating initial population"
+    #print "evaluating initial population"
     initialPopulationEvaluation(pop, ser, data, hof)
     hof.save(name=name)
     data.save(name=name)
-        
 
     # for testing without serial:
-    #initialPopulationEvaluationTest(pop, data, hof)
+    # initialPopulationEvaluationTest(pop, data, hof)
     
     # evolutionary loop
     print "Starting Evolution"
     for i in range(amountGen):
-        continueEvolution(pop, hof, ax1, data, ser)
+        pop = continueEvolution(pop, hof, ax1, data, ser)
         hof.save(name=name)
         data.save(name=name)
         
@@ -338,7 +394,7 @@ def run(hof, data, ax, name):
 
 def main():
 	
-    amountRuns = 4
+    amountRuns = 2
     hofs = []
     datas = []
     plt.ion()
@@ -418,5 +474,45 @@ def loadBestIndividual():
     fit = float(ser.readline()) # waits for incoming line (fitness value)  
     print 'received robot fitness: ' , fit
 
+def loadBestIndividual(fname):
+    filename = fname
+    hof=Hof()
+    hof.load(filename)
+    bestIndividual = []
+    bestGen = 0
+    mf = 0
+    ser = serial.Serial('COM21', 9600)
+    time.sleep(0.5) # pause between sending genome        
+    ser.read_all()
+    time.sleep(0.5) # pause between sending genome        
+    
+    for i in range(len(hof.maxFit)):
+        if (hof.maxFit[i] > mf):
+            bestIndividual = hof.individuals[i].genome
+            mf = hof.maxFit[i]
+            bestGen = i
+    print "best individual was from generation " , bestGen, " and had genome " , bestIndividual , " with a fitness of " , mf
+    time.sleep(1.0) # pause between sending genome        
+    ser.read_all()
+    ser.write(bestIndividual)
+    time.sleep(0.5) # pause between sending genome        
+    print "waiting for message"
+    fit = float(ser.readline()) # waits for incoming line (fitness value)  
+    print 'received robot fitness: ' , fit
+
+def loadAll(fname):
+    fig = plt.figure()
+    ax = fig.add_subplot(1,1, 1)    
+    hof=Hof()
+    data = Data()
+    hof.load(fname)
+    data.load(fname)
+    data.plotGraph(ax) 
+
+#fname = 'ExpZero31_0' 
+#loadAll(fname)
 main()
+#loadBestIndividual(fname)
+#plt.show()
+# main()
 #loadBestIndividual()

@@ -6,25 +6,32 @@ int curPos[6] = {90, 90, 90}; // stores servo positions
 int counter = 0;
 bool endSwitch = false;
 bool startSwitch = false;
-int startSwitchPin = 16;
-int endSwitchPin = 14;
+const int startSwitchPin = 14;
+const int endSwitchPin = 16;
+const int trigPin = 44;
+const int echoPin = 42;
+long duration;
+int distance;
+
 #define IRsensor A0
 
-int offset[6] = {10,0,-1,3,0,0};
+int offset[6] = { -8, -2, 7, 0, -1, -2};
 
-int geneLength = 3; // needs to be an even number
-int gene[3];
+#define geneLength 15 // needs to be an even number
+int gene[geneLength];
 int servoCenter = 90;
 int maxServoRange = 40; // only move maxServoRange from center
 int stepSize = 10;
 int maxIRValue = 245;
+int maxUSValue = 5000;
+int pauseTime = 10000;
 
 #define PI2 6.283185 // 2*PI saves calculation later
 
-int delayTime = 10; //Delay between each sample when playing back movement (for Tower Pro SG90: At 4.8V, the speed of the servo is 0.12 sec/60° = 2 ms/deg.)
+int delayTime = 100; //Delay between each sample when playing back movement (for Tower Pro SG90: At 4.8V, the speed of the servo is 0.12 sec/60° = 2 ms/deg.)
 int P = 400; //Maximum period of the periodic movement function
 int playBackTime = 2 * P; //The movement pattern will be played back two times when it is being evalutated
-#define LENGTH 500 // Length of the wave lookup table - needs to be equal to P/delayTime
+#define LENGTH 200 // Length of the wave lookup table - needs to be equal to P/delayTime
 byte wave[6][LENGTH]; // Storage for waveform to play back from
 float f; //Temporary storage for calculating function values
 int offsets[6];
@@ -42,10 +49,13 @@ void setup() {
   delay(100);
   pinMode(startSwitchPin, INPUT_PULLUP);
   pinMode(endSwitchPin, INPUT_PULLUP);
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+  // IMPORTANT FOR EVOLUTION::
   while (!Serial) {
     ; // wait for serial port to connect. Needed for native USB port only
   }
-  //establishContact();
+  establishContact();
 }
 
 void establishContact() {
@@ -55,53 +65,83 @@ void establishContact() {
   }
 }
 
+float measureUltrasound() { // has a 8 ms delay
+  // Clears the trigPin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(6);
+  digitalWrite(trigPin, LOW);
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  duration = pulseIn(echoPin, HIGH);
+  // Calculating the distance
+  // distance = duration * 0.034 / 2;
+  // Prints the distance on the Serial Monitor
+  // Serial.print("Distance: ");
+  // Serial.println(distance);
+  return duration;
+}
+
 void loop() {
   int n = 0;
   bool eval = false;
-  //Serial.println(analogRead(IRsensor));  // value from sensor * (5/1024)
-  //delay(500);
-  
+  // Serial.println(analogRead(IRsensor));  // value from sensor * (5/1024)
+  // delay(500);
+  //Serial.println(measureUltrasound());
+  // setServosToPosition(servoCenter);
+
   while (Serial.available()) {
-      delay(200); // ensure entire serial signal is received, not half a signal
-      if (n < geneLength) {
-        gene[n] = Serial.read();
-        // Serial.print(gene[n]);
-        // Serial.println(",");
-        eval = true;
-      }
-      else {
-        Serial.read();
-      }
-      n++;
+    delay(500); // ensure entire serial signal is received, not half a signal
+    if (n < geneLength) {
+      gene[n] = Serial.read();
+      // Serial.print(gene[n]);
+      // Serial.println(",");
+      eval = true;
     }
-    if (eval == true) {
-      delay(100);
-      moveToStart();
-      delay(500);
-      float fitness = evaluateIndividual(gene);
-      Serial.println(fitness);
-      delay(100);
-      setServosToPosition(servoCenter);
-      delay(100);
-      eval = false;
+    else {
+      Serial.read();
     }
-//  
+    n++;
+  }
+  //eval = true;
+  if (eval == true) {
+    delay(100);
+    Serial.flush();
+    moveToStart();
+    setServosToPosition(servoCenter);
+    delay(pauseTime);
+    //  float AMP = ((float)gene[n] / 255.0) * maxServoRange;
+    //  float PHASE = gene[n + 1] / 255.0 * 4;
+    //  float FREQ = (float)gene[n + 2] / 255; //gene[n + 2];
+    float fitness = evaluateIndividual(gene);
+    Serial.println(fitness);
+    delay(100);
+    setServosToPosition(servoCenter);
+    delay(100);
+    eval = false;
+  }
+  //
 }
 
 void moveToStart() {
   float AMP = 40.0;
-  float PHASE = 1;//gene[n + 1];
-  float FREQ = 1.0;//gene[n + 2];
+  float PHASE = 1.0;//gene[n + 1]; // max 4
+  float FREQ = 100.0 / 255.0 ; //1.0;//gene[n + 2]; // max 1
   //  Serial.print("STARTING");
-  float timeCount = 0.0;
+  int i = 0;
   while (startSwitch == false) {
-    timeCount += FREQ;
+    i++;
+    // old // timeCount += FREQ;
     //    Serial.print(digitalRead(startSwitchPin));
     if (digitalRead(startSwitchPin) == LOW) {
       startSwitch = true;
     }
     for (int n = 0; n < amountServos; n++) {
-      int servoPos = 90 + (int)(AMP * sin(timeCount + (n * 1.0)));
+      int f = AMP * sin((PI2 / 2) * ((float) (i * FREQ)) + (PHASE * n)); //+1 added to n and i to avoid zero for first value
+
+      int servoPos = 90 + f;
+      // old // int servoPos = 90 + (int)(AMP * sin(timeCount + (n * 1.0)));
       //Serial.print("tc = ");
       //Serial.print(timeCount);
       //Serial.print(servoPos);
@@ -113,13 +153,16 @@ void moveToStart() {
       else if (servoPos > servoCenter + maxServoRange) {
         servoPos = servoCenter + maxServoRange;
       }
-        servos[n].write(servoPos + offset[n]); // Move servos to the right position for the current time
+      //      if (n == 4) {
+      servos[n].write(servoPos + offset[n]); // Move servos to the right position for the current time
       curPos[n] = servoPos;
-      sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
+      //      }
+      // sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
       // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
-      sensorSum = sensorSum + sensorValue; //Add sensor reading to the sum (summed here because saving it clogged up memory)
-      delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
+      // sensorSum = sensorSum + sensorValue; //Add sensor reading to the sum (summed here because saving it clogged up memory)
     }
+    delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
+    //delay(8);
   }
   //  Serial.print("DONE");
   startSwitch = false;
@@ -127,17 +170,10 @@ void moveToStart() {
 
 void setServosToPosition(int pos) {
   // smoothly set servo to desired position
-  for (int n = 0; n < 10; n++) {
-    for (int i = 0; i < amountServos; i++) {
-      int dpos = pos - curPos[i];
-      int tpos =  pos - ((9 - n) * dpos * 0.11);
-      servos[i].write(tpos + offset[i]);
-      if (n == 9) {
-        curPos[i] = tpos;
-      }
-    }
-    delay(delayTime);
+  for (int i = 0; i < amountServos; i++) {
+    servos[i].write(90 + offset[i]);
   }
+  delay(delayTime);
 }
 
 float evaluateIndividual(int gene[]) {
@@ -174,9 +210,14 @@ float evaluateIndividual(int gene[]) {
         //Serial.print(FREQ);
         //Serial.print(",f:");
         //Serial.println(f);
-        sum = sum + f;
+        if (geneLength <= 3) {
+          sum = sum + f / (geneLength / 3);
+        }
+        else {
+          sum = sum + f / (geneLength / 3) * 2;
+        }
       }
-      sum = 90.0 + (sum / (geneLength / 2.0)) + 0.5; //0.5 added to round off correctly when converting to byte below
+      sum = 90.0 + (sum + 0.5); //0.5 added to round off correctly when converting to byte below
       wave[j][i] = (byte)sum;
       //Serial.print("wave ");
       //Serial.print(j);
@@ -192,12 +233,14 @@ float evaluateIndividual(int gene[]) {
   for (int i = 0; i < LENGTH; i++) { // Step across wave table
     //Serial.print(digitalRead(endSwitchPin));
     if (digitalRead(endSwitchPin) == LOW) {
-      return ((double)(LENGTH-i) * (double) maxIRValue) + fitValue;
+      return ((double)(LENGTH - i) * (double) maxUSValue) + fitValue;
       break;
     }
     else {
       lCount++;
-      fitValue += analogRead(IRsensor);   // print the distance
+      // fitValue += analogRead(IRsensor);   // print the distance
+      fitValue += measureUltrasound();
+      delay(delayTime);
     }
     for (int n = 0; n < amountServos; n++) {
       int servoPos = wave[n][i];
@@ -211,13 +254,13 @@ float evaluateIndividual(int gene[]) {
       }
       servos[n].write(servoPos  + offset[n]); // Move servos to the right position for the current time
       curPos[n] = servoPos;
-      sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
-      // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
-      sensorSum = sensorSum + sensorValue; //Add sensor reading to the sum (summed here because saving it clogged up memory)
-      delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
     }
+    // sensorValue = analogRead(sensorPin); // Read the value from the sensor (comes in the range of 0 to 1023)
+    // Serial.println(sensorValue); //Print the values coming from the sensor on the screen
+    // sensorSum = sensorSum + sensorValue; //Add sensor reading to the sum (summed here because saving it clogged up memory)
+    // delay(delayTime); //Wait before playing the next sample [Is this needed? How long does it take to execute the code in the loop? Maybe good to have to protect the servos?]
   }
-  return fitValue; 
+  return fitValue;
   return 0.0;
   //*4* Send the summation of sensor readings to NN (this value is used to calculate the fitness of the individual (the phenotype))
   // [copy code from Franks program]
