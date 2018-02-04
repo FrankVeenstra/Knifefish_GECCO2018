@@ -211,10 +211,10 @@ float evaluateIndividual(int gene[]) {
         //Serial.print(",f:");
         //Serial.println(f);
         if (geneLength <= 3) {
-          sum = sum + f / (geneLength / 3);
+          sum = sum + (f / (geneLength / 3));
         }
         else {
-          sum = sum + f / (geneLength / 3) * 2;
+          sum = sum + (f / (geneLength / 3) * 2);
         }
       }
       sum = 90.0 + (sum + 0.5); //0.5 added to round off correctly when converting to byte below
