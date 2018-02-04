@@ -40,7 +40,7 @@ genome = [] # template
 mutationRate = 0.1
 sigma = 50
 useSigma = True
-amountGen = 100
+amountGen = 20
 # not implemented yet
 elitismFactor = 0.11
 replaceWorst = 0.1
@@ -180,6 +180,7 @@ class Hof:
 
 class Data:
     def __init__(self):
+        self.individuals = []
         self.fitnessValues = []
         self.p0 = []
         self.p25 = []
@@ -200,6 +201,7 @@ class Data:
         pickle.dump(self.std, f)
         pickle.dump(self.avg, f)
         pickle.dump(self.x, f)
+        pickle.dump(self.individuals)
         f.close()
     def load(self,name):
         f = open(name + 'data', "r")
@@ -212,8 +214,9 @@ class Data:
         self.std = pickle.load(f)
         self.avg = pickle.load(f)
         self.x = pickle.load(f)
+        self.individuals = pickle.load(f)
         f.close()
-    def setValues(self,fitnessValues):
+    def setValues(self,fitnessValues, individuals):
         self.fitnessValues.append(fitnessValues)
         self.p0.append(np.percentile(fitnessValues, 0))
         self.p25.append(np.percentile(fitnessValues, 25))
@@ -223,6 +226,7 @@ class Data:
         self.std.append(np.std(fitnessValues))
         self.avg.append(np.average(fitnessValues))
         self.x.append(len(self.x))
+        self.individuals(individuals)
     def plotGraph(self, ax):
         ax.clear()
         ax.plot(self.p100, color = 'black')
@@ -260,14 +264,16 @@ def initialPopulationEvaluation(pop, ser, data, hof):
         ser.flush() # remove messages in cue       
         pop[i].fitness = fit
     fitnessAr = []
+    inds = []
     bestInd = 0
     bestFit = 0
     for i in range(populationSize):
         fitnessAr.append(pop[i].fitness)
+        inds.append(pop[i].genome)
         if (pop[i].fitness > bestFit):
             bestFit = pop[i].fitness
             bestInd = i
-    data.setValues(fitnessAr)
+    data.setValues(fitnessAr, inds)
     hof.individuals.append(pop[bestInd])
     hof.maxFit.append(bestFit)
     printPop(pop)
@@ -280,12 +286,14 @@ def initialPopulationEvaluationTest(pop, data, hof):
     fitnessAr = []
     bestInd = 0
     bestFit = 0
+    inds = []
     for i in range(populationSize):
         fitnessAr.append(pop[i].fitness)
+        inds.append(pop[i].genome)
         if (pop[i].fitness > bestFit):
             bestFit = pop[i].fitness
             bestInd = i
-    data.setValues(fitnessAr)
+    data.setValues(fitnessAr, inds)
     hof.individuals.append(pop[bestInd])
     hof.maxFit.append(bestFit)
     return pop
@@ -314,14 +322,15 @@ def continueEvolution(pop, hof, ax, data, ser):
     bestInd = 0
     bestFit = 0
     fitnessAr = []
-
+    inds = []
     for i in range(populationSize):
         fitnessAr.append(pop[i].fitness)
+        inds.append(pop[i].genome)
         if (pop[i].fitness > bestFit):
             bestFit = pop[i].fitness
             bestInd = i
         
-    data.setValues(fitnessAr)
+    data.setValues(fitnessAr, inds)
     hof.individuals.append(pop[bestInd])
     hof.maxFit.append(bestFit)
 #    ax.clear()
@@ -351,13 +360,15 @@ def continueEvolutionTest(pop, hof, ax, data):
     bestInd = 0
     bestFit = 0
     fitnessAr = []
+    inds = []
     for i in range(populationSize):
         fitnessAr.append(pop[i].fitness)
+        inds.append(pop[i].genome)
         if (pop[i].fitness > bestFit):
              bestFit = pop[i].fitness
              bestInd = i
      
-    data.setValues(fitnessAr)
+    data.setValues(fitnessAr, inds)
     hof.individuals.append(pop[bestInd])
     hof.maxFit.append(bestFit)
 #    ax.clear()
@@ -366,13 +377,24 @@ def continueEvolutionTest(pop, hof, ax, data):
     plt.pause(0.001)
     return pop
 
+def evaluateIndividual(genome, ser):
+    time.sleep(0.5)
+    print "sending genome: " + str(genome)
+    ser.write(pop[i].genome)
+    time.sleep(0.5)
+    fit = float(ser.readline()) # waits until line is received
+    print 'received robot fitness: ', fit
+    fits_t.append(fit)
+    ser.flush()
+    return fitness
+
 def run(hof, data, ax, name):
     maxFit = 0
     # open serial port
-    #ser = serial.Serial('COM21', 9600)
-    #print "opened serial"
-    #time.sleep(0.5) # pause between sending genome        
-    #ser.read_all()
+    ser = serial.Serial('COM21', 9600)
+    print "opened serial"
+    time.sleep(0.5) # pause between sending genome        
+    ser.read_all() # necessary for getting rid of the signals used to establish communication
 
     ax1 = ax
     
@@ -397,8 +419,6 @@ def run(hof, data, ax, name):
     process = 1
     if (process == 1):
         N = genomeLength
-    
-        
         creator.create("FitnessMax", base.Fitness, weights=(1.0,))
         creator.create("Individual", list, fitness=creator.FitnessMax)
         creator.create("Strategy", array.array, typecode="d")
@@ -449,7 +469,7 @@ def run(hof, data, ax, name):
         logbook = tools.Logbook()
         logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
         
-        for i in range(40):
+        for i in range(amountGen):
             fitnesses = []
             population = toolbox.generate()
             for k in range(len(population)):
@@ -458,8 +478,11 @@ def run(hof, data, ax, name):
                         population[k][l] = 255
                     if (population[k][l] < 0):
                         population[k][l] = 0
-            # Evaluate the individuals
-                fitnesses.append(anotherfitFunction(population[k]))
+                # Evaluate the individuals
+                # test:
+                # fitnesses.append(anotherfitFunction(population[k]))
+                # with serial:
+                fitnesses.append(evaluateIndividual(population[k],ser))
             for ind, fit in zip(population, fitnesses):
                 ind.fitness.values = fit
             minFit = min(fitnesses)
@@ -478,13 +501,15 @@ def run(hof, data, ax, name):
             bestInd = 0
             bestFit = 0
             fitnessAr = []
+            inds = []
             for i in range(populationSize):
                 fitnessAr.append(fitnesses[i])
+                inds.append(population[i])
                 if (fitnesses[i] > bestFit):
                     bestFit = fitnesses[i]
                     bestInd = i
         
-            data.setValues(fitnessAr)
+            data.setValues(fitnessAr, inds)
             theInd = Individual()
             theInd.genome = population[bestInd]
             theInd.fitness = fitnesses[i]
