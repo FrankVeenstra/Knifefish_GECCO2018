@@ -15,7 +15,7 @@ int distance;
 
 #define IRsensor A0
 
-int offset[6] = { -8, -2, 7, 0, -1, -2};
+int offset[6] = { -8, -2, 7, -4, -1, -2};
 
 #define geneLength 15 // needs to be an even number
 int gene[geneLength];
@@ -28,10 +28,10 @@ int pauseTime = 10000;
 
 #define PI2 6.283185 // 2*PI saves calculation later
 
-int delayTime = 100; //Delay between each sample when playing back movement (for Tower Pro SG90: At 4.8V, the speed of the servo is 0.12 sec/60° = 2 ms/deg.)
+int delayTime = 20; //Delay between each sample when playing back movement (for Tower Pro SG90: At 4.8V, the speed of the servo is 0.12 sec/60° = 2 ms/deg.)
 int P = 400; //Maximum period of the periodic movement function
 int playBackTime = 2 * P; //The movement pattern will be played back two times when it is being evalutated
-#define LENGTH 200 // Length of the wave lookup table - needs to be equal to P/delayTime
+#define LENGTH 500 // Length of the wave lookup table - needs to be equal to P/delayTime
 byte wave[6][LENGTH]; // Storage for waveform to play back from
 float f; //Temporary storage for calculating function values
 int offsets[6];
@@ -52,10 +52,10 @@ void setup() {
   pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
   pinMode(echoPin, INPUT); // Sets the echoPin as an Input
   // IMPORTANT FOR EVOLUTION::
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-  establishContact();
+  //while (!Serial) {
+  //  ; // wait for serial port to connect. Needed for native USB port only
+  //}
+  //establishContact();
 }
 
 void establishContact() {
@@ -104,7 +104,7 @@ void loop() {
     }
     n++;
   }
-  //eval = true;
+  // eval = true;
   if (eval == true) {
     delay(100);
     Serial.flush();
@@ -127,7 +127,7 @@ void loop() {
 void moveToStart() {
   float AMP = 40.0;
   float PHASE = 1.0;//gene[n + 1]; // max 4
-  float FREQ = 100.0 / 255.0 ; //1.0;//gene[n + 2]; // max 1
+  float FREQ = 100.0 / 255.0 / 5 ; //1.0;//gene[n + 2]; // max 1
   //  Serial.print("STARTING");
   int i = 0;
   while (startSwitch == false) {
@@ -195,7 +195,7 @@ float evaluateIndividual(int gene[]) {
         // f = gene[n] * sin(((PI2 * (n + 1) * (i + 1)) / P) + gene[n + 1]); //+1 added to n and i to avoid zero for first value
         float AMP = ((float)gene[n] / 255.0) * maxServoRange;
         float PHASE = gene[n + 1] / 255.0 * 4;
-        float FREQ = (float)gene[n + 2] / 255; //gene[n + 2];
+        float FREQ = (float)gene[n + 2] / 255 / 5; //gene[n + 2];
         //if (j >=3) {
         f = AMP * sin((PI2 / 2) * ((float) (-i * FREQ)) + (PHASE * j)); //+1 added to n and i to avoid zero for first value
         //}
