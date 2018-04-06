@@ -33,11 +33,11 @@ import struct
 
 # Settings or global variables
 populationSize = 10
-genomeLength = 15
+genomeLength = 6
 amountTrials = 1
 name = 'test'
 genome = [] # template
-mutationRate = 0.1
+mutationRate = 0.3
 sigma = 50
 useSigma = True
 amountGen = 20
@@ -201,7 +201,7 @@ class Data:
         pickle.dump(self.std, f)
         pickle.dump(self.avg, f)
         pickle.dump(self.x, f)
-        pickle.dump(self.individuals)
+        pickle.dump(self.individuals,f)
         f.close()
     def load(self,name):
         f = open(name + 'data', "r")
@@ -226,7 +226,7 @@ class Data:
         self.std.append(np.std(fitnessValues))
         self.avg.append(np.average(fitnessValues))
         self.x.append(len(self.x))
-        self.individuals(individuals)
+        self.individuals.append(individuals)
     def plotGraph(self, ax):
         ax.clear()
         ax.plot(self.p100, color = 'black')
@@ -340,7 +340,6 @@ def continueEvolution(pop, hof, ax, data, ser):
     plt.pause(0.05)
     return pop
 
-
 def continueEvolutionTest(pop, hof, ax, data):
     time.sleep(0.001)
 #    pop = selectTournament(pop, 3)
@@ -379,14 +378,16 @@ def continueEvolutionTest(pop, hof, ax, data):
 
 def evaluateIndividual(genome, ser):
     time.sleep(0.5)
-    print "sending genome: " + str(genome)
-    ser.write(pop[i].genome)
+    bGen = []
+    for i in range(len(genome)):
+        bGen.append(int(genome[i]))
+    print "sending genome: " + str(bGen)
+    ser.write(bGen)
     time.sleep(0.5)
     fit = float(ser.readline()) # waits until line is received
     print 'received robot fitness: ', fit
-    fits_t.append(fit)
     ser.flush()
-    return fitness
+    return fit, 
 
 def run(hof, data, ax, name):
     maxFit = 0
@@ -469,7 +470,7 @@ def run(hof, data, ax, name):
         logbook = tools.Logbook()
         logbook.header = ['gen', 'nevals'] + (stats.fields if stats else [])
         
-        for i in range(amountGen):
+        for i in range(amountGen + 1):
             fitnesses = []
             population = toolbox.generate()
             for k in range(len(population)):
@@ -503,21 +504,25 @@ def run(hof, data, ax, name):
             fitnessAr = []
             inds = []
             for i in range(populationSize):
+                ind = []
                 fitnessAr.append(fitnesses[i])
-                inds.append(population[i])
+                for j in range(len(population[i])):
+                    ind.append(population[i][j])
+                inds.append(ind)
                 if (fitnesses[i] > bestFit):
                     bestFit = fitnesses[i]
                     bestInd = i
         
             data.setValues(fitnessAr, inds)
-            theInd = Individual()
-            theInd.genome = population[bestInd]
-            theInd.fitness = fitnesses[i]
-            hof.individuals.append(theInd)
+            hof.individuals.append(inds[bestInd])
             hof.maxFit.append(bestFit)
+            data.plotGraph(ax1)
+            plt.pause(0.05)
+            hof.save(name=name)
+            data.save(name=name)
+    
 #    ax.clear()
 #    ax.plot(hof.maxFit)
-        data.plotGraph(ax)
         finalPops.append(fPop)
         allAllMin.append(allMin)
         ax1.plot(allMin)
@@ -547,24 +552,25 @@ def run(hof, data, ax, name):
 
 def main():
 	
-    amountRuns = 2
+    amountRuns = 5
     hofs = []
     datas = []
     plt.ion()
     fig = plt.figure()
-    name = 'ExpZero'
-    for i in range(amountRuns):
-        counter = 0
-        nameFound = False 
-        while (nameFound == False):
+    name = 'CMAFOUR2GEN'
+    counter = 0
+    nameFound = False 
+    while (nameFound == False):
+        fname = name + str(counter) + '_' + '0'
+        if (os.path.isfile(fname) == True):
+            counter+=1
             fname = name + str(counter) + '_' + '0'
-            if (os.path.isfile(fname) == True):
-                counter+=1
-                fname = name + str(counter) + '_' + '0'
-                nameFound = False
-            else:
-                name = name + str(counter) + '_'
-                nameFound = True
+            nameFound = False
+        else:
+            name = name + str(counter) + '_'
+            nameFound = True
+    
+    for i in range(amountRuns):
         x = amountRuns
         ax = fig.add_subplot(x,1,i + 1)    
         hof = Hof()
@@ -640,14 +646,18 @@ def loadBestIndividual(fname):
     time.sleep(0.5) # pause between sending genome        
     
     for i in range(len(hof.maxFit)):
-        if (hof.maxFit[i] > mf):
-            bestIndividual = hof.individuals[i].genome
-            mf = hof.maxFit[i]
-            bestGen = i
+        if (i > 10):
+            if (hof.maxFit[i] > mf):
+                bestIndividual = hof.individuals[i]
+                mf = hof.maxFit[i]
+                bestGen = i
     print "best individual was from generation " , bestGen, " and had genome " , bestIndividual , " with a fitness of " , mf
     time.sleep(1.0) # pause between sending genome        
     ser.read_all()
-    ser.write(bestIndividual)
+    bGen = []
+    for i in range(len(bestIndividual)):
+        bGen.append(int(bestIndividual[i]))
+    ser.write(bGen)
     time.sleep(0.5) # pause between sending genome        
     print "waiting for message"
     fit = float(ser.readline()) # waits for incoming line (fitness value)  
@@ -775,9 +785,6 @@ def loadAll(fname):
 
     ax5 = fig5.add_subplot(1,1,1)
     ax5.plot(hof.maxFit, label = 'Run 1')
-      
-    
-
     ax5.set_xlabel('Generation')
     ax5.set_ylabel('Fitness Value')
     
@@ -816,7 +823,8 @@ def loadAll(fname):
       #sum = 90.0 + (sum + 0.5); //0.5 added to round off correctly when converting to byte below
       #wave[j][i] = (byte)sum;
 
-#fname = 'ExpZero42_0' 
+#fname = 'CMASINE5_0' 
+#fname = 'CMAFOURIER1_2' 
 #loadAll(fname)
 main()
 #loadBestIndividual(fname)
